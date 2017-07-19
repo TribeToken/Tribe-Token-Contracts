@@ -15,16 +15,14 @@ contract Crowdsale is Pause, Puller {
 	}
     
 	//CONSTANTS
-	// Minimum number of TRIBE to sell
-	uint public constant MIN_CAP = 7500000000000; // 7,500,000 TRIBE
 	// Maximum number of TRIBE to sell
-	uint public constant MAX_CAP = 150000000000000; // 150,000,000 TRIBE
+	uint public constant MAX_CAP = 160000000000000; // 160 000 000 TRIBE
 	// Minimum amount to invest
 	uint public constant MIN_INVEST_ETHER = 100 finney; // 0.1ETH
 	// Crowdsale period
 	uint private constant CROWDSALE_PERIOD = 22 days; // 22 days crowdsale run
 	// Number of TRIBE per Ether
-	uint public constant COIN_PER_ETHER = 3000000000; // 3,000 TRIBE
+	uint public constant COIN_PER_ETHER = 3000000000; // 3 000 TRIBE
 
 
 	//VARIABLES
@@ -44,19 +42,21 @@ contract Crowdsale is Pause, Puller {
 	uint public endTime;
  	// Is crowdsale still on going
 	bool public crowdsaleClosed;
+	// Refund open variable
+	bool public refundsOpen;
 
 	// Backers Ether indexed by their Ethereum address
 	mapping(address => Backer) public backers;
 
 
 	//MODIFIERS
-	modifier minCapNotReached() {
-		if ((now < endTime) || coinSentToEther >= MIN_CAP ) throw;
-		_;
-	}
-
 	modifier respectTimeFrame() {
 		if ((now < startTime) || (now > endTime )) throw;
+		_;
+	}
+	
+	modifier refundStatus() {
+		if ((refunds != true )) throw;
 		_;
 	}
 
@@ -118,7 +118,6 @@ contract Crowdsale is Pause, Puller {
         // Check if the crowdsale has ended or if the old tokens have been sold
     if(coinSentToEther != MAX_CAP){
         if (now < endTime)  throw; // If Crowdsale still running
-        if (coinSentToEther < MIN_CAP && now < endTime + 7 days) throw; // If MIN_CAP is not reached donors have 7days to get refund before we can finalise
     }
 		
 		if (!multisigEther.send(this.balance)) throw; // Move the remaining Ether to the multisig address
@@ -149,36 +148,26 @@ contract Crowdsale is Pause, Puller {
 		multisigEther = addr;
 	}
 
-	// Manually back TRIBE owner address.
+	// Change contract ownership
 	function changeTribeOwner() onlyOwner public {
 		coin.transferOwnership(owner);
 	}
 
-	// Transfer remains to owner in case if impossible to do min invest
-  //THIS CHANGED!!!
-	function getCoinRemains() onlyOwner public {
-    uint remains = coin.balanceOf(this);
-
-		if(MIN_CAP < coinSentToEther) throw;
-
-		Backer backer = backers[owner];
-		coin.transfer(owner, remains); // Transfer TRIBE right now 
-
-		backer.coinSent = backer.coinSent.add(remains);
-
-		coinSentToEther = coinSentToEther.add(remains);
-
-		// Send events
-		LogCoinsEmited(this ,remains);
-		LogReceivedETH(owner, etherReceived);
+	// Toggle refund state on and off
+	function setRefundState() onlyOwner public {
+		if(enableRefund == false){
+			enableRefund = true;
+		}else{
+			enableRefund = false;
+		}
 	}
 
 
-	//Refund function when minimum cap isnt reached, this is step is step 2, THIS FUNCTION ONLY AVAILABLE IF MIN CAP NOT REACHED.
-  //STEP1: From TRIBE token contract use "approve" function with the amount of TRIBE you got in total.
-  //STEP2: From TRIBE crowdsale contract use "refund" function with the amount of TRIBE you got in total.
-  //STEP3: From TRIBE crowdsale contract use "withdrawPayement" function to recieve the ETH.
-	function refund(uint _value) minCapNotReached public {
+	//Refund function when minimum cap isnt reached, this is step is step 2, THIS FUNCTION ONLY AVAILABLE AFTER BEING ENABLED.
+	//STEP1: From TRIBE token contract use "approve" function with the amount of TRIBE you got in total.
+	//STEP2: From TRIBE crowdsale contract use "refund" function with the amount of TRIBE you got in total.
+	//STEP3: From TRIBE crowdsale contract use "withdrawPayement" function to recieve the ETH.
+	function refund(uint _value) refundStatus public {
 		
 		if (_value != backers[msg.sender].coinSent) throw; // compare value from backer balance
 
